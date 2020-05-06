@@ -8,10 +8,11 @@
 *.pdf
 *.bed
 *.svg
+.DS_Store
+.vscode
 venv/
 test_outputs/
-test/
-.DS_Store
+outputdir/
 
 # Distribution / packaging
 .Python

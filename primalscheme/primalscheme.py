@@ -27,7 +27,6 @@ import argparse
 import logging
 
 from Bio import SeqIO
-from Bio.Alphabet import AlphabetEncoder, _verify_alphabet, IUPAC
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -85,21 +84,25 @@ def process_fasta(file_path):
     """
 
     references = []
-    alphabet = AlphabetEncoder(IUPAC.unambiguous_dna, 'N')
 
     records = SeqIO.parse(file_path, 'fasta')  # may raise
 
-    # Remove gaps, set alphabet
+    
+    # Remove gaps
     for record in records:
         ref = SeqRecord(
-            Seq(str(record.seq).replace('-', '').upper(), alphabet),
+            Seq(str(record.seq).replace('-', '').upper()),
             id=record.id, description=record.id
         )
         references.append(ref)
 
-    # Check for too few or too many references
-    if not (1 <= len(references) <= 100):
-        raise ValueError('Between 1 and 100 reference genomes are required.')
+    # Check for no references
+    if not references:
+        raise ValueError('The input FASTA file does not contain any valid references.')
+
+    # Check for too many references
+    if len(references) > 100:
+        raise ValueError('A maximum of 100 reference genomes is currently supported.')
 
     # Check for max difference in length between references
     primary_ref = references[0]
@@ -113,13 +116,15 @@ def process_fasta(file_path):
         )
 
     # Check for a valid alphabet
-    if any(not _verify_alphabet(r.seq) for r in references):
-        raise ValueError(
-            'One or more of your fasta sequences contain invalid '
-            "nucleotide codes. The supported alphabet is '{}'. "
-            'Ambiguity codes and gaps are not currently supported.'
-            .format(alphabet.letters)
-        )
+    VALID_ALPHABET = "AGCTacgt"
+    for r in references:
+        if any(l not in VALID_ALPHABET for l in set(r.seq)):
+            raise ValueError(
+                'One or more of your fasta sequences contain invalid '
+                "nucleotide codes. The supported alphabet is '{}'. "
+                'Ambiguity codes and gaps are not currently supported.'
+                .format(VALID_ALPHABET)
+            )
 
     return references
 
