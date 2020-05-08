@@ -27,24 +27,16 @@ from Bio.Seq import Seq
 from primer3 import calcTm, calcHairpin, calcHomodimer
 from porechop.cpp_function_wrappers import adapter_alignment
 
-from primalscheme import settings
-
-logger = logging.getLogger('Primal Log')
+logger = logging.getLogger('primalscheme')
 
 
 class Primer(object):
     """A simple primer."""
 
-    def __init__(self, direction, name, seq):
+    def __init__(self, seq, start, direction):
         self.direction = direction
-        self.name = name
         self.seq = seq
-        self.tm = calcTm(self.seq, mv_conc=50, dv_conc=1.5, dntp_conc=0.6)
-        self.homodimer = calcHomodimer(self.seq, mv_conc=50, dv_conc=1.5,
-                                       dntp_conc=0.6).tm
-        self.hairpin = calcHairpin(self.seq, mv_conc=50, dv_conc=1.5,
-                                   dntp_conc=0.6).tm
-        self.gc = 100.0 * (seq.count('G') + seq.count('C')) / len(seq)
+        self.start = start
 
     @property
     def length(self):
@@ -52,12 +44,20 @@ class Primer(object):
 
 
 class CandidatePrimer(Primer):
-    """A candidate primer for a region."""
+    """A candidate primer."""
 
-    def __init__(self, direction, name, seq, start):
-        super(CandidatePrimer, self).__init__(direction, name, seq)
-        self.start = start
+    def __init__(self, seq, start, direction, name='', penalty=None):
+        super().__init__(seq, start, direction)  # TODO tidy up
+        self.name = name
+        self.penalty = penalty
+
         self.percent_identity = 0
+        self.tm = calcTm(self.seq, mv_conc=50, dv_conc=1.5, dntp_conc=0.6)
+        self.homodimer = calcHomodimer(self.seq, mv_conc=50, dv_conc=1.5,
+                                       dntp_conc=0.6).tm
+        self.hairpin = calcHairpin(self.seq, mv_conc=50, dv_conc=1.5, 
+                                   dntp_conc=0.6).tm
+        self.gc = 100.0 * (seq.count('G') + seq.count('C')) / len(seq)
         self.alignments = []
 
     def align(self, references):
@@ -80,104 +80,31 @@ class CandidatePrimer(Primer):
 
 
 class CandidatePrimerPair(object):
-    """A pair of candidate primers for a region."""
+    """A pair of candidate primers."""
 
     def __init__(self, left, right):
         self.left = left
         self.right = right
-        # Calculate mean percent identity
-        self.mean_percent_identity = (
-            left.percent_identity + right.percent_identity) / 2
+
+    @property
+    def mean_percent_identity(self):
+        return (self.left.percent_identity + self.right.percent_identity) / 2
 
     @property
     def product_length(self):
         return self.right.start - self.left.start + 1
 
 
-class Region(object):
-    """A region that forms part of a scheme."""
-    def __init__(self, region_num, chunk_start, candidate_pairs, references,
-                 prefix, max_alts=0):
-        self.region_num = region_num
-        self.prefix = prefix
-        if self.region_num % 2 == 0:
-            self.pool = '%s_2' % (self.prefix)
-        else:
-            self.pool = '%s_1' % (self.prefix)
-        self.candidate_pairs = candidate_pairs
-        self.alternates = []
-
-        # Sort by highest scoring pair with the rightmost position
-        self.candidate_pairs.sort(key=lambda x: (x.mean_percent_identity,
-                                                 x.right.end), reverse=True)
-
-        # Align candidate pairs
-        for pair in self.candidate_pairs:
-            pair.left.align(references)
-            pair.right.align(references)
-
-        # Get a list of alts based on the alignments
-        left_alts = [each.aln_ref for each in
-                     self.candidate_pairs[0].left.alignments
-                     if each.aln_ref != self.candidate_pairs[0].left.seq]
-        right_alts = [each.aln_ref for each in
-                      self.candidate_pairs[0].right.alignments
-                      if each.aln_ref != self.candidate_pairs[0].right.seq]
-
-        left_alts_filt = [str(alt) for alt in left_alts if alt is not None]
-        right_alts_filt = [str(alt) for alt in right_alts if alt is not None]
-
-        # Get the counts for the alts to prioritise
-        left_alts_counts = [(alt, left_alts_filt.count(alt))
-                            for alt in set(left_alts_filt)]
-        left_alts_counts.sort(key=lambda x: x[1], reverse=True)
-
-        # Make tuples of unique primers and frequency and sort
-        right_alts_counts = [(alt, right_alts_filt.count(alt))
-                             for alt in set(right_alts_filt)]
-        right_alts_counts.sort(key=lambda x: x[1], reverse=True)
-
-        # For up to max_alts and if it occurs more than once generate a
-        # CandidatePrimer and add it to alternates list in Region
-        for n, left_alt in enumerate(left_alts_counts):
-            # max_alts is 1-indexed
-            if n <= max_alts - 1 and left_alt[1] > 1:
-                logger.debug('Found an alternate primer {} which covers {} \
-                             reference sequences'.format(n, left_alt[1]))
-                left = CandidatePrimer(
-                    'LEFT',
-                    self.candidate_pairs[0].left.name + '_alt%i' % (n+1),
-                    left_alt[0],
-                    self.candidate_pairs[0].left.start
-                ).align(references)
-                self.alternates.append(left)
-
-        for n, right_alt in enumerate(right_alts_counts):
-            if n <= max_alts - 1 and right_alt[1] > 1:
-                logger.debug('Found an alternate primer {} which covers {} \
-                             reference sequences'.format(n, right_alt[1]))
-                right = CandidatePrimer(
-                    'RIGHT',
-                    self.candidate_pairs[0].right.name + '_alt%i' % (n+1),
-                    right_alt[0],
-                    self.candidate_pairs[0].right.start
-                ).align(references)
-                self.alternates.append(right)
-
-    @property
-    def top_pair(self):
-        return self.candidate_pairs[0]
-
-    @property
-    def unique_candidates(self):
-        unique_left = len(set(pair.left.seq for pair in self.candidate_pairs))
-        unique_right = len(set(pair.right.seq
-                               for pair in self.candidate_pairs))
-        return (unique_left, unique_right)
-
-
 class CAlignment(object):
     """An seqan alignment of a primer against a reference."""
+
+    MISMATCHES = [
+        set(['A', 'A']),
+        set(['A', 'C']),
+        set(['C', 'C']),
+        set(['G', 'A']),
+        set(['G', 'G']),
+    ]
 
     def __init__(self, primer, ref):
         self.start = None
@@ -253,6 +180,6 @@ class CAlignment(object):
 
             # Check 3' mismatches
             if (set([self.aln_query[-1], self.aln_ref_comp[-1]])
-                    in settings.MISMATCHES):
+                    in CAlignment.MISMATCHES):
                 self.mm_3prime = True
                 self.percent_identity = 0
