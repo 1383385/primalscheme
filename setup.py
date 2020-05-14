@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='primalscheme',
-    version='0.2.3',
+    version='0.2.5',
     author='Josh Quick',
     author_email='j.quick@bham.ac.uk',
     license='GPL',
@@ -14,7 +14,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url='https://github.com/aresti/primalscheme',
-    packages=find_packages(exclude=('tests', 'docs')),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     include_package_data=True,  # as specified in MANIFEST.in
     install_requires=[
         'biopython>=1,<2',
@@ -25,7 +26,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "primalscheme = primalscheme.primalscheme:main",
+            "primalscheme = primalscheme.cli:main",
         ],
     },
     classifiers=[
