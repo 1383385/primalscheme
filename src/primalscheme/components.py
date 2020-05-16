@@ -26,7 +26,7 @@ import parasail
 from Bio.Seq import Seq
 from primer3 import calcTm
 
-logger = logging.getLogger('primalscheme')
+logger = logging.getLogger("primalscheme")
 
 
 class Primer(object):
@@ -38,7 +38,7 @@ class Primer(object):
         self.start = start
 
     def __str__(self):
-        return f'{self.direction}:{self.seq}:{self.start}'
+        return f"{self.direction}:{self.seq}:{self.start}"
 
     @property
     def length(self):
@@ -48,17 +48,18 @@ class Primer(object):
 class CandidatePrimer(Primer):
     """A candidate primer."""
 
-    def __init__(self, seq, start, direction, name='', penalty=None):
+    def __init__(self, seq, start, direction, name="", penalty=None):
         super().__init__(seq, start, direction)
         self.name = name
         self.penalty = penalty
         self.identity = 0
         self.tm = calcTm(self.seq, mv_conc=50, dv_conc=1.5, dntp_conc=0.6)
-        self.gc = 100.0 * (seq.count('G') + seq.count('C')) / len(seq)
+        self.gc = 100.0 * (seq.count("G") + seq.count("C")) / len(seq)
         self.alignments = []
 
     def align(self, references):
-        for ref in references[1:]:  # no need to align against primary
+        for ref in references[1:]:
+            # align against non-primary references
             alignment = get_alignment(self, ref)
             if alignment:
                 self.alignments.append(alignment)
@@ -71,7 +72,7 @@ class CandidatePrimer(Primer):
 
     @property
     def end(self):
-        if self.direction == 'LEFT':
+        if self.direction == "LEFT":
             return self.start + self.length
         else:
             return self.start - self.length
@@ -101,26 +102,27 @@ def get_alignment(primer, reference):
     EXTEND = 1
     IDENTITY_THRESHOLD = 0.7
 
-    if primer.direction == 'LEFT':
+    if primer.direction == "LEFT":
         query = primer.seq
-    elif primer.direction == 'RIGHT':
+    elif primer.direction == "RIGHT":
         query = str(Seq(primer.seq).reverse_complement())
 
     # Semi-Global, do not penalize gaps at beginning and end of s2/database
-    trace = parasail.sg_dx_trace_striped_sat(query, str(reference.seq), OPEN,
-                                             EXTEND, MATRIX)
+    trace = parasail.sg_dx_trace_striped_sat(
+        query, str(reference.seq), OPEN, EXTEND, MATRIX
+    )
     traceback = trace.get_traceback()
 
     query_end = trace.end_query
     ref_end = trace.end_ref
 
     # Get alignment strings
-    aln_query = traceback.query[ref_end - query_end:ref_end + 1]
-    cigar = traceback.comp[ref_end - query_end:ref_end + 1]
-    aln_ref = traceback.ref[ref_end - query_end:ref_end + 1]
+    aln_query = traceback.query[ref_end - query_end : ref_end + 1]
+    cigar = traceback.comp[ref_end - query_end : ref_end + 1]
+    aln_ref = traceback.ref[ref_end - query_end : ref_end + 1]
 
     # Identity for glocal alignment
-    identity = cigar.count('|') / len(cigar)
+    identity = cigar.count("|") / len(cigar)
 
     # Alignment failed
     if identity < IDENTITY_THRESHOLD:
@@ -129,17 +131,15 @@ def get_alignment(primer, reference):
     # Format alignment
     refid = reference.id[:30]
     name = primer.name[:30]
-    formatted_query = (f'\n{name: <30} {1: >6} {aln_query} {query_end}')
-    if primer.direction == 'LEFT':
-        formatted_ref = (
-            f'\n{refid: <30} {ref_end - query_end: >6} {aln_ref} {ref_end}')
-    elif primer.direction == 'RIGHT':
-        formatted_ref = (
-            f'\n{refid: <30} {ref_end: >6} {aln_ref} {ref_end - query_end}')
+    formatted_query = f"\n{name: <30} {1: >6} {aln_query} {query_end}"
+    if primer.direction == "LEFT":
+        formatted_ref = f"\n{refid: <30} {ref_end - query_end: >6} {aln_ref} {ref_end}"
+    elif primer.direction == "RIGHT":
+        formatted_ref = f"\n{refid: <30} {ref_end: >6} {aln_ref} {ref_end - query_end}"
 
-    formatted_alignment = (formatted_query +
-                           f"\n{'': <30} {'': >6} {cigar}" +
-                           formatted_ref)
+    formatted_alignment = (
+        formatted_query + f"\n{'': <30} {'': >6} {cigar}" + formatted_ref
+    )
 
     del trace
 
